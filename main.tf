@@ -1,4 +1,4 @@
-# This is my terraform file for my Wiz Tech Screen
+# This is my terraform file for my Wiz Tech Screen.
 terraform {
   required_providers {
     kubernetes = {
