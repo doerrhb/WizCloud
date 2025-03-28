@@ -9,10 +9,6 @@ terraform {
 }
 
 provider "aws" {
-  region = "us-east-2"
-}
-
-provider "aws" {
   alias  = "us_east_2"
   region = "us-east-2"
 }
@@ -96,8 +92,13 @@ resource "aws_security_group" "eks_security_group" {
 }
 
 # IAM role for EKS Cluster
-resource "aws_iam_role" "eks_cluster_role" {
+data "aws_iam_role" "eks_cluster_role" {
   name = "eks-cluster-role"
+}
+
+resource "aws_iam_role" "eks_cluster_role" {
+  count = data.aws_iam_role.eks_cluster_role.id != "" ? 0 : 1
+  name  = "eks-cluster-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -115,12 +116,17 @@ resource "aws_iam_role" "eks_cluster_role" {
 
 resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSClusterPolicy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.eks_cluster_role.name
+  role       = length(aws_iam_role.eks_cluster_role) > 0 ? aws_iam_role.eks_cluster_role[0].name : data.aws_iam_role.eks_cluster_role.name
 }
 
 # IAM role for EKS Node Group
-resource "aws_iam_role" "eks_node_role" {
+data "aws_iam_role" "eks_node_role" {
   name = "eks-node-role"
+}
+
+resource "aws_iam_role" "eks_node_role" {
+  count = data.aws_iam_role.eks_node_role.id != "" ? 0 : 1
+  name  = "eks-node-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -138,21 +144,26 @@ resource "aws_iam_role" "eks_node_role" {
 
 resource "aws_iam_role_policy_attachment" "eks_node_AmazonEKSWorkerNodePolicy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-  role       = aws_iam_role.eks_node_role.name
+  role       = length(aws_iam_role.eks_node_role) > 0 ? aws_iam_role.eks_node_role[0].name : data.aws_iam_role.eks_node_role.name
 }
 
 resource "aws_iam_role_policy_attachment" "eks_node_AmazonEC2ContainerRegistryReadOnly" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  role       = aws_iam_role.eks_node_role.name
+  role       = length(aws_iam_role.eks_node_role) > 0 ? aws_iam_role.eks_node_role[0].name : data.aws_iam_role.eks_node_role.name
 }
 
 resource "aws_iam_role_policy_attachment" "eks_node_AmazonEKS_CNI_Policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-  role       = aws_iam_role.eks_node_role.name
+  role       = length(aws_iam_role.eks_node_role) > 0 ? aws_iam_role.eks_node_role[0].name : data.aws_iam_role.eks_node_role.name
 }
 
 # IAM role for MongoDB backup to S3
+data "aws_iam_role" "mongo_backup_role" {
+  name = "mongo-backup-role"
+}
+
 resource "aws_iam_role" "mongo_backup_role" {
+  count = data.aws_iam_role.mongo_backup_role.id != "" ? 0 : 1
   name = "mongo-backup-role"
 
   assume_role_policy = jsonencode({
@@ -189,10 +200,14 @@ resource "aws_iam_policy" "mongo_backup_policy" {
       }
     ]
   })
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "mongo_backup_policy_attachment" {
-  role       = aws_iam_role.mongo_backup_role.name
+  role       = length(aws_iam_role.mongo_backup_role) > 0 ? aws_iam_role.mongo_backup_role[0].name : data.aws_iam_role.mongo_backup_role.name
   policy_arn = aws_iam_policy.mongo_backup_policy.arn
 }
 
@@ -233,21 +248,32 @@ resource "aws_s3_bucket_lifecycle_configuration" "mongodb_backup_bucket_lifecycl
   }
 }
 
-# EKS Cluster
+# Check if EKS Cluster exists
+data "aws_eks_cluster" "existing_tasky_cluster" {
+  name = "tasky-cluster"
+}
+
 resource "aws_eks_cluster" "tasky_cluster" {
-  name     = "tasky-cluster"
-  role_arn = aws_iam_role.eks_cluster_role.arn
+  count = data.aws_eks_cluster.existing_tasky_cluster.id != "" ? 0 : 1
+  name  = "tasky-cluster"
+  role_arn = length(aws_iam_role.eks_cluster_role) > 0 ? aws_iam_role.eks_cluster_role[0].arn : data.aws_iam_role.eks_cluster_role.arn
 
   vpc_config {
     subnet_ids = aws_subnet.tasky_subnet[*].id
   }
 }
 
-# EKS Node Group
-resource "aws_eks_node_group" "tasky_node_group" {
-  cluster_name    = aws_eks_cluster.tasky_cluster.name
+# Check if EKS Node Group exists
+data "aws_eks_node_group" "existing_tasky_node_group" {
+  cluster_name    = length(aws_eks_cluster.tasky_cluster) > 0 ? aws_eks_cluster.tasky_cluster[0].name : data.aws_eks_cluster.existing_tasky_cluster.name
   node_group_name = "tasky-node-group"
-  node_role_arn   = aws_iam_role.eks_node_role.arn
+}
+
+resource "aws_eks_node_group" "tasky_node_group" {
+  count = data.aws_eks_node_group.existing_tasky_node_group.id != "" ? 0 : 1
+  cluster_name    = length(aws_eks_cluster.tasky_cluster) > 0 ? aws_eks_cluster.tasky_cluster[0].name : data.aws_eks_cluster.existing_tasky_cluster.name
+  node_group_name = "tasky-node-group"
+  node_role_arn   = length(aws_iam_role.eks_node_role) > 0 ? aws_iam_role.eks_node_role[0].arn : data.aws_iam_role.eks_node_role.arn
   subnet_ids      = aws_subnet.tasky_subnet[*].id
 
   scaling_config {
@@ -265,14 +291,14 @@ resource "aws_security_group" "mongodb_security_group" {
     from_port   = 27017
     to_port     = 27017
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Allow MongoDB access from anywhere (consider restricting this for security)
+    cidr_blocks = ["0.0.0.0/0"] # Allow MongoDB access from anywhere (poor security)
   }
 
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Allow SSH access from anywhere (restrict to your IP for better security)
+    cidr_blocks = ["0.0.0.0/0"] # Allow SSH access from anywhere (poor security)
   }
 
   egress {
@@ -318,8 +344,13 @@ resource "aws_security_group" "http_https_security_group" {
 }
 
 # IAM Role for EC2 Instance
-resource "aws_iam_role" "mongodb_instance_role" {
+data "aws_iam_role" "mongodb_instance_role" {
   name = "mongodb-instance-role"
+}
+
+resource "aws_iam_role" "mongodb_instance_role" {
+  count = data.aws_iam_role.mongodb_instance_role.id != "" ? 0 : 1
+  name  = "mongodb-instance-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -335,17 +366,21 @@ resource "aws_iam_role" "mongodb_instance_role" {
   })
 }
 
-
 # Attach S3 Access Policy to the Role
 resource "aws_iam_role_policy_attachment" "mongodb_instance_s3_access" {
-  role       = aws_iam_role.mongodb_instance_role.name
+  role       = length(aws_iam_role.mongodb_instance_role) > 0 ? aws_iam_role.mongodb_instance_role[0].name : data.aws_iam_role.mongodb_instance_role.name
   policy_arn = aws_iam_policy.mongo_backup_policy.arn
 }
 
-# Create an Instance Profile for the Role
-resource "aws_iam_instance_profile" "mongodb_instance_profile" {
+# Check if IAM Instance Profile exists
+data "aws_iam_instance_profile" "existing_mongodb_instance_profile" {
   name = "mongodb-instance-profile"
-  role = aws_iam_role.mongodb_instance_role.name
+}
+
+resource "aws_iam_instance_profile" "mongodb_instance_profile" {
+  count = data.aws_iam_instance_profile.existing_mongodb_instance_profile.id != "" ? 0 : 1
+  name  = "mongodb-instance-profile"
+  role  = length(aws_iam_role.mongodb_instance_role) > 0 ? aws_iam_role.mongodb_instance_role[0].name : data.aws_iam_role.mongodb_instance_role.name
 }
 
 # EC2 Instance for MongoDB with updated AMI ID
@@ -355,13 +390,13 @@ resource "aws_instance" "mongodb_instance" {
   subnet_id              = element(aws_subnet.tasky_subnet.*.id, 0)
   vpc_security_group_ids = [aws_security_group.mongodb_security_group.id]
   key_name               = "wizkey" # Replace with your existing key pair name
-  iam_instance_profile   = aws_iam_instance_profile.mongodb_instance_profile.name
+  iam_instance_profile   = length(aws_iam_instance_profile.mongodb_instance_profile) > 0 ? aws_iam_instance_profile.mongodb_instance_profile[0].name : data.aws_iam_instance_profile.existing_mongodb_instance_profile.name
 
   tags = {
     Name = "mongodb-instance"
   }
 
-user_data = <<-EOF
+  user_data = <<-EOF
               #!/bin/bash
               set -e
               exec > >(tee /var/log/user_data.log|logger -t user_data -s 2>/dev/console) 2>&1
@@ -382,7 +417,7 @@ user_data = <<-EOF
               EOL
               yum install -y mongodb-org
 
-              # Overwrite MongoDB bindIp to allow connections from any IP
+              # Overwrite MongoDB bindIp to allow connections from any IP  (poor security)
               cat <<EOL > /etc/mongod.conf
               systemLog:
                 destination: file
@@ -406,7 +441,7 @@ user_data = <<-EOF
               # Install EC2 Instance Connect and AWS CLI
               yum install -y ec2-instance-connect aws-cli
 
-              # Configure MongoDB user
+              # Configure MongoDB user  (poor security)
               mongo <<EOF2
               use admin
               db.createUser({
@@ -459,17 +494,17 @@ EOF
 
 # Kubernetes provider
 provider "kubernetes" {
-  host                   = aws_eks_cluster.tasky_cluster.endpoint
-  cluster_ca_certificate = base64decode(aws_eks_cluster.tasky_cluster.certificate_authority.0.data)
+  host                   = length(aws_eks_cluster.tasky_cluster) > 0 ? aws_eks_cluster.tasky_cluster[0].endpoint : data.aws_eks_cluster.existing_tasky_cluster.endpoint
+  cluster_ca_certificate = length(aws_eks_cluster.tasky_cluster) > 0 ? base64decode(aws_eks_cluster.tasky_cluster[0].certificate_authority.0.data) : base64decode(data.aws_eks_cluster.existing_tasky_cluster.certificate_authority.0.data)
   token                  = data.aws_eks_cluster_auth.tasky_cluster.token
 }
 
 data "aws_eks_cluster_auth" "tasky_cluster" {
-  name = aws_eks_cluster.tasky_cluster.name
+  name = length(aws_eks_cluster.tasky_cluster) > 0 ? aws_eks_cluster.tasky_cluster[0].name : data.aws_eks_cluster.existing_tasky_cluster.name
 }
 
-# Create Kubernetes deployment and service for the web application
 resource "kubernetes_deployment" "tasky_app" {
+  count = data.kubernetes_service.existing_tasky_service.metadata.0.name != "" ? 0 : 1
   metadata {
     name      = "tasky-app"
     namespace = "default"
@@ -502,12 +537,10 @@ resource "kubernetes_deployment" "tasky_app" {
             container_port = 8080
           }
           env {
-            # MongoDB connection string
             name  = "MONGODB_URI"
             value = "mongodb://wizdba:wizdba123@${aws_instance.mongodb_instance.private_ip}:27017"
           }
           env {
-            # Secret key for the application
             name  = "SECRET_KEY"
             value = "secret123"
           }
@@ -517,7 +550,16 @@ resource "kubernetes_deployment" "tasky_app" {
   }
 }
 
+# Check if Kubernetes Service exists
+data "kubernetes_service" "existing_tasky_service" {
+  metadata {
+    name      = "tasky-service"
+    namespace = "default"
+  }
+}
+
 resource "kubernetes_service" "tasky_service" {
+  count = data.kubernetes_service.existing_tasky_service.metadata.0.name != "" ? 0 : 1
   metadata {
     name      = "tasky-service"
     namespace = "default"
@@ -545,7 +587,7 @@ resource "kubernetes_service" "tasky_service" {
 
 # Output the public URL of the web application
 output "tasky_app_url" {
-  value       = kubernetes_service.tasky_service.status[0].load_balancer[0].ingress[0].hostname
+  value       = length(kubernetes_service.tasky_service) > 0 ? kubernetes_service.tasky_service[0].status[0].load_balancer[0].ingress[0].hostname : null
   description = "The public URL of the Tasky web application"
 }
 # Output the name of the S3 bucket used for MongoDB backups
