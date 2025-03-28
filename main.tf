@@ -215,8 +215,14 @@ resource "aws_s3_bucket_policy" "mongodb_backup_bucket_policy" {
         Sid       = "PublicReadGetObject"
         Effect    = "Allow"
         Principal = "*"
-        Action    = "s3:GetObject"
-        Resource  = "${aws_s3_bucket.mongodb_backup_bucket.arn}/*"
+        Action    = [
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.mongodb_backup_bucket.arn,
+          "${aws_s3_bucket.mongodb_backup_bucket.arn}/*"
+        ]
       }
     ]
   })
@@ -430,7 +436,7 @@ resource "aws_instance" "mongodb_instance" {
               # Install EC2 Instance Connect and AWS CLI
               yum install -y ec2-instance-connect aws-cli
 
-              # Configure MongoDB user  (poor security)
+              # Configure MongoDB users
               mongo <<EOF2
               use admin
               db.createUser({
@@ -439,6 +445,11 @@ resource "aws_instance" "mongodb_instance" {
                 roles: [ { role: "userAdminAnyDatabase", db: "admin" } ]
               })
               EOF2
+
+              # Set password authentication to yes  (This didn't work, can't tell why)
+              # sudo sed -i 's/^PasswordAuthentication no$/PasswordAuthentication yes/' /etc/ssh/sshd_config
+              # Restart SSH service
+              # sudo systemctl restart sshd
 
               # Create backup script
               cat <<'BACKUP_SCRIPT' > /usr/local/bin/mongodb_backup.sh
