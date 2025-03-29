@@ -297,14 +297,14 @@ resource "aws_security_group" "mongodb_security_group" {
     from_port   = 27017
     to_port     = 27017
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Allow MongoDB access from anywhere (poor security)
+    cidr_blocks = ["0.0.0.0/0"] 
   }
 
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Allow SSH access from anywhere (poor security)
+    cidr_blocks = ["0.0.0.0/0"] # Allow SSH access from anywhere (poor security, consider restricting further)
   }
 
   egress {
@@ -532,7 +532,7 @@ resource "kubernetes_deployment" "tasky_app" {
       spec {
         container {
           name  = "tasky-app"
-          image = "doerrhb/tasky:latest"
+          image = "ghcr.io/doerrhb/tasky:latest"
           image_pull_policy = "Always" # Force Kubernetes to pull the latest image
           port {
             container_port = 8080
@@ -544,6 +544,9 @@ resource "kubernetes_deployment" "tasky_app" {
           env {
             name  = "SECRET_KEY"
             value = "secret123"
+          }
+          security_context {
+            privileged = true # Enable privileged mode
           }
         }
       }
