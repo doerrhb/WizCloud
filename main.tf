@@ -272,6 +272,7 @@ resource "aws_eks_cluster" "tasky_cluster" {
   vpc_config {
     subnet_ids = aws_subnet.tasky_subnet[*].id
   }
+
 }
 
 # EKS Node Group
@@ -529,10 +530,10 @@ resource "kubernetes_deployment" "tasky_app" {
       }
 
       spec {
-        #service_account_name = "my-cluster-admin-sa" # Use the specified service account
         container {
           name  = "tasky-app"
-          image = "jeffthorne/tasky:latest"
+          image = "doerrhb/tasky:latest"
+          image_pull_policy = "Always" # Force Kubernetes to pull the latest image
           port {
             container_port = 8080
           }
@@ -549,7 +550,6 @@ resource "kubernetes_deployment" "tasky_app" {
     }
   }
 }
-
 resource "kubernetes_service" "tasky_service" {
   metadata {
     name      = "tasky-service"
