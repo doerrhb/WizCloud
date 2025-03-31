@@ -186,9 +186,6 @@ resource "aws_iam_policy" "mongo_backup_policy" {
     ]
   })
 
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 resource "aws_iam_role_policy_attachment" "mongo_backup_policy_attachment" {
@@ -297,7 +294,7 @@ resource "aws_security_group" "mongodb_security_group" {
     from_port   = 27017
     to_port     = 27017
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] 
+    cidr_blocks = ["0.0.0.0/0"]  # Tried to make this more restrictive, never worked.
   }
 
   ingress {
@@ -373,6 +370,12 @@ resource "aws_iam_role_policy_attachment" "mongodb_instance_s3_access" {
   policy_arn = aws_iam_policy.mongo_backup_policy.arn
 }
 
+# Attach AdministratorAccess Policy to the Role - overly permissive CSP permission
+resource "aws_iam_role_policy_attachment" "mongodb_instance_administrator_access" {
+  role       = aws_iam_role.mongodb_instance_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
+
 # IAM Instance Profile
 resource "aws_iam_instance_profile" "mongodb_instance_profile" {
   name = "mongodb-instance-profile"
@@ -385,7 +388,7 @@ resource "aws_instance" "mongodb_instance" {
   instance_type          = "t3.micro"
   subnet_id              = element(aws_subnet.tasky_subnet.*.id, 0)
   vpc_security_group_ids = [aws_security_group.mongodb_security_group.id]
-  key_name               = "wizkey" # Replace with your existing key pair name
+  key_name               = "wizkey" # Key Pair I created
   iam_instance_profile   = aws_iam_instance_profile.mongodb_instance_profile.name
 
   tags = {
